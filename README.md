@@ -1,6 +1,6 @@
 # RoundRobin
 
-[![npm version](https://img.shields.io/npm/v/roundrobin.svg)](https://www.npmjs.com/package/roundrobin)
+[![npm version](https://img.shields.io/npm/v/@genoventures-labs/roundrobin.svg)](https://www.npmjs.com/package/@genoventures-labs/roundrobin)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org)
 [![Tests](https://img.shields.io/badge/tests-20%20passed-success.svg)](#)
@@ -32,19 +32,19 @@ Documentation reference: [OpenCode Zen Documentation](https://opencode.ai/docs/z
 Install globally to use the CLI executable:
 
 ```bash
-npm install -g roundrobin
+npm install -g @genoventures-labs/roundrobin
 ```
 
 Or execute directly via `npx`:
 
 ```bash
-npx roundrobin
+npx @genoventures-labs/roundrobin
 ```
 
 To use RoundRobin programmatically in a project:
 
 ```bash
-npm install roundrobin
+npm install @genoventures-labs/roundrobin
 ```
 
 ---
@@ -135,7 +135,7 @@ roundrobin test
 Import RoundRobin into Node.js or TypeScript applications:
 
 ```typescript
-import { RoundRobin } from 'roundrobin';
+import { RoundRobin } from '@genoventures-labs/roundrobin';
 
 const client = new RoundRobin({
   openCodeZenApiKey: process.env.OPENCODE_ZEN_API_KEY,
