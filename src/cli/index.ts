@@ -29,16 +29,16 @@ function setupRouterEvents(rr: RoundRobin): void {
 
   rr.on('model-exhausted', (modelId, reason, cooldownMs) => {
     console.log(
-      pc.yellow(`\n⚠️  Model '${pc.bold(modelId)}' exhausted: ${reason.message}`) +
+      pc.yellow(`\n[exhausted] Model '${pc.bold(modelId)}' exhausted: ${reason.message}`) +
       pc.dim(` (cooldown: ${formatDuration(cooldownMs)})`)
     );
   });
 
   rr.on('model-rotated', (fromModel, toModel, reason) => {
     console.log(
-      pc.cyan(`🔀 Rotating: `) +
+      pc.cyan(`[rotate] `) +
       pc.strikethrough(pc.red(fromModel)) +
-      pc.cyan(` ➔ `) +
+      pc.cyan(` -> `) +
       pc.green(pc.bold(toModel)) +
       pc.dim(` [reason: ${reason.type}]`)
     );
@@ -46,15 +46,15 @@ function setupRouterEvents(rr: RoundRobin): void {
 
   rr.on('ollama-fallback', (models) => {
     console.log(
-      pc.magenta(`\n🔄 All OpenCode Zen free models exhausted!`) +
-      pc.cyan(` Routing back and checking local Ollama...`) +
-      pc.green(`\n🦙 Found capable local models: [${models.join(', ')}]`)
+      pc.magenta(`\n[fallback] All OpenCode Zen free models exhausted.`) +
+      pc.cyan(` Checking local Ollama...`) +
+      pc.green(`\n[fallback] Discovered capable local models: [${models.join(', ')}]`)
     );
   });
 
   rr.on('all-exhausted', (summary) => {
     console.log(
-      pc.red(`\n🛑 All OpenCode Zen free models exhausted and no capable Ollama models available.`) +
+      pc.red(`\n[all-exhausted] All OpenCode Zen free models exhausted and no capable Ollama models available.`) +
       pc.yellow(`\n${summary.message}\n`)
     );
   });
@@ -215,13 +215,13 @@ program
 
     try {
       const serverInfo = await rr.serve(port, options.host);
-      console.log(pc.bold(pc.green('\n🚀 RoundRobin Server is running!')));
+      console.log(pc.bold(pc.green('\n[server] RoundRobin server listening')));
       console.log(pc.cyan(`   URL:          http://localhost:${serverInfo.port}`));
       console.log(pc.cyan(`   Endpoint:     http://localhost:${serverInfo.port}/v1/chat/completions`));
       console.log(pc.cyan(`   Models:       http://localhost:${serverInfo.port}/v1/models`));
       console.log(pc.cyan(`   Health:       http://localhost:${serverInfo.port}/health`));
       console.log(pc.cyan(`   Status:       http://localhost:${serverInfo.port}/status\n`));
-      console.log(pc.dim('Use this endpoint in Cursor, Aider, OpenCode, Continue, or any OpenAI-compatible client.'));
+      console.log(pc.dim('Compatible with Cursor, Aider, OpenCode, Continue, or any OpenAI-compatible client.'));
       console.log(pc.dim('Press Ctrl+C to stop the server.\n'));
     } catch (err: unknown) {
       console.error(pc.red(`Failed to start server: ${err instanceof Error ? err.message : String(err)}`));
@@ -252,23 +252,23 @@ program
       ollamaHost: options.ollama,
     });
 
-    console.log(pc.bold('\n🔍 Testing RoundRobin Router Connections...\n'));
+    console.log(pc.bold('\n[test] Testing RoundRobin Router Connections...\n'));
 
     // Check Ollama
     const ollamaClient = new OllamaClient({ host: config.ollamaHost });
     const ollamaAvailable = await ollamaClient.isAvailable();
     if (ollamaAvailable) {
       const models = await ollamaClient.listCapableModels();
-      console.log(pc.green(`✓ Local Ollama at ${config.ollamaHost}: ONLINE`));
-      console.log(pc.dim(`  Discovered capable models (${models.length}): ${models.map(m => m.id).join(', ') || 'none'}`));
+      console.log(pc.green(`[ok] Local Ollama at ${config.ollamaHost}: ONLINE`));
+      console.log(pc.dim(`     Discovered capable models (${models.length}): ${models.map(m => m.id).join(', ') || 'none'}`));
     } else {
-      console.log(pc.yellow(`⚠ Local Ollama at ${config.ollamaHost}: OFFLINE / Unreachable`));
+      console.log(pc.yellow(`[notice] Local Ollama at ${config.ollamaHost}: OFFLINE / Unreachable`));
     }
 
     // Check Zen Free Models
     console.log(pc.bold('\nOpenCode Zen Verified Free Models:'));
     for (const m of OPENCODE_ZEN_FREE_MODELS) {
-      console.log(`  • ${pc.bold(m.name)} (${pc.dim(m.id)}) - ${pc.green('Free tier')}`);
+      console.log(`  * ${pc.bold(m.name)} (${pc.dim(m.id)}) - ${pc.green('Free tier')}`);
     }
 
     console.log(pc.dim(`\nOpenCode Zen API Key: ${config.openCodeZenApiKey ? pc.green('Configured') : pc.yellow('Not set (run `roundrobin config set-key <key>`)')}\n`));
@@ -317,10 +317,10 @@ async function printModelsStatus(rr: RoundRobin, ollamaHost?: string): Promise<v
   console.log('────────────────────────────────────────────────────────────────────────────────');
 
   for (const s of statuses) {
-    let statusStr = pc.green('● Available (Free)');
+    let statusStr = pc.green('Available (Free)');
     if (s.isExhausted) {
       const remaining = s.exhaustedUntil ? Math.max(0, s.exhaustedUntil - Date.now()) : 0;
-      statusStr = pc.red(`✖ Exhausted (${formatDuration(remaining)} remaining)`);
+      statusStr = pc.red(`Exhausted (${formatDuration(remaining)} cooldown)`);
     }
     console.log(
       ` ${s.model.id.padEnd(32)} ${s.model.name.padEnd(30)} ${statusStr}`
