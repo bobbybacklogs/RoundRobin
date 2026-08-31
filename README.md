@@ -1,5 +1,9 @@
 # RoundRobin
 
+<p align="center">
+   <img src="./repo_assets/lockup.png" width="600" height="400"></img>
+</p>
+
 [![npm version](https://img.shields.io/npm/v/@genoventures-labs/roundrobin.svg)](https://www.npmjs.com/package/@genoventures-labs/roundrobin)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org)
@@ -26,6 +30,10 @@ RoundRobin exclusively routes through models verified as zero-cost on OpenCode Z
 Documentation reference: [OpenCode Zen Documentation](https://opencode.ai/docs/zen/)
 
 ---
+
+<p align="center">
+   <img src="./repo_assets/explainer.png" width="600" height="400"></img>
+</p>
 
 ## Installation
 
