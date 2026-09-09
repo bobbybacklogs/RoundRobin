@@ -1,7 +1,7 @@
 {
   "name": "@genoventures-labs/roundrobin",
   "version": "1.0.0",
-  "description": "Free-model router for OpenCode Zen verified free models with automatic exhaustion rotation and Ollama fallback.",
+  "description": "Free-model router for Vercel AI Gateway free models with automatic exhaustion rotation and Ollama fallback.",
   "publishConfig": {
     "access": "public"
   },
@@ -46,8 +46,8 @@
     "url": "git+https://github.com/bobbybacklogs/RoundRobin.git"
   },
   "keywords": [
-    "opencode",
-    "opencode-zen",
+    "vercel",
+    "ai-gateway",
     "free-models",
     "router",
     "round-robin",

@@ -7,27 +7,34 @@
 [![npm version](https://img.shields.io/npm/v/@genoventures-labs/roundrobin.svg)](https://www.npmjs.com/package/@genoventures-labs/roundrobin)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-20%20passed-success.svg)](#)
-[![OpenCode Zen](https://img.shields.io/badge/OpenCode%20Zen-verified%20models-blue.svg)](https://opencode.ai/docs/zen/)
+[![Vercel AI Gateway](https://img.shields.io/badge/Vercel-AI%20Gateway-black.svg)](https://vercel.com/docs/ai-gateway)
 
-RoundRobin is a model router and command-line interface that cycles through verified free models on OpenCode Zen. When model limits or quotas are reached, RoundRobin automatically advances to the next available free model. If all verified free models are exhausted, the router checks for a local Ollama instance and forwards requests to installed local models. If no functional models remain, RoundRobin halts cleanly and reports status to the user.
+RoundRobin is a model router and CLI that cycles through **free** language models on [Vercel AI Gateway](https://vercel.com/docs/ai-gateway). When a model hits rate limits or quota errors, RoundRobin rotates to the next free model. If all free Gateway models are exhausted, it falls back to local Ollama. If AI Gateway is unavailable (Pro membership required), free cloud models are treated as unavailable.
 
 ---
 
 ## Supported Free Models
 
-RoundRobin exclusively routes through models verified as zero-cost on OpenCode Zen:
+RoundRobin only routes through AI Gateway language models tagged `free` with $0 input/output pricing. Curated fallbacks:
 
 | Model Identifier | Model Name | Endpoint | Tier |
 | :--- | :--- | :--- | :--- |
-| `big-pickle` | Big Pickle | OpenCode Zen v1 | Free |
-| `mimo-v2.5-free` | MiMo-V2.5 Free | OpenCode Zen v1 | Free |
-| `ling-3.0-flash-fin-free` | Ling 3.0 Flash Fin Free | OpenCode Zen v1 | Free |
-| `nemotron-3-ultra-free` | Nemotron 3 Ultra Free | OpenCode Zen v1 | Free |
-| `nemotron-3.5-lightning-free` | Nemotron 3.5 Lightning Free | OpenCode Zen v1 | Free |
-| `muse-spark-1.2-contributor-free` | Muse Spark 1.2 Contributor Free | OpenCode Zen v1 | Free |
+| `inclusionai/ling-3.0-flash-fin-free` | Ling 3.0 Flash Fin (Free) | AI Gateway v1 | Free |
+| `inclusionai/ling-3.0-flash-sante-free` | Ling 3.0 Flash Sante (Free) | AI Gateway v1 | Free |
+| `poolside/laguna-s-2.1-free` | Laguna S 2.1 Free | AI Gateway v1 | Free |
 
-Documentation reference: [OpenCode Zen Documentation](https://opencode.ai/docs/zen/)
+At runtime RoundRobin refreshes this list from `https://ai-gateway.vercel.sh/v1/models` and prefers explicit `*-free` ids.
+
+Browse the live catalog: [AI Gateway models](https://vercel.com/ai-gateway/models)
+
+---
+
+## Requirements
+
+1. **Vercel CLI login** — `vercel login` (RoundRobin probes your CLI session for AI Gateway access)
+2. **AI Gateway / Pro** — without AI Gateway (Pro), free Gateway models are not available
+3. **API key** — `AI_GATEWAY_API_KEY` (create with `vercel ai-gateway api-keys create`)
+4. Optional: local [Ollama](https://ollama.com) for offline fallback
 
 ---
 
@@ -37,19 +44,17 @@ Documentation reference: [OpenCode Zen Documentation](https://opencode.ai/docs/z
 
 ## Installation
 
-Install globally to use the CLI executable:
-
 ```bash
 npm install -g @genoventures-labs/roundrobin
 ```
 
-Or execute directly via `npx`:
+Or:
 
 ```bash
 npx @genoventures-labs/roundrobin
 ```
 
-To use RoundRobin programmatically in a project:
+Programmatic:
 
 ```bash
 npm install @genoventures-labs/roundrobin
@@ -59,22 +64,20 @@ npm install @genoventures-labs/roundrobin
 
 ## Configuration
 
-OpenCode Zen requires an API key for authenticated routing. Obtain an API key from the OpenCode platform and configure it using any of the following methods:
+Authenticate with Vercel CLI, then create/set an AI Gateway key:
 
-1. CLI configuration command:
-   ```bash
-   roundrobin config set-key YOUR_API_KEY
-   ```
-2. Environment variable:
-   ```bash
-   export OPENCODE_ZEN_API_KEY="YOUR_API_KEY"
-   ```
-3. Project `.env` or `.roundrobinrc` file:
-   ```env
-   OPENCODE_ZEN_API_KEY=YOUR_API_KEY
-   ```
+```bash
+vercel login
+vercel ai-gateway api-keys create --name roundrobin
+export AI_GATEWAY_API_KEY="your_key_here"
+# or
+roundrobin config set-key YOUR_API_KEY
+```
 
-Ollama defaults to `http://localhost:11434`. You can configure a custom Ollama host using:
+Also supported: `VERCEL_OIDC_TOKEN` from `vercel env pull .env.local`.
+
+Ollama defaults to `http://localhost:11434`:
+
 ```bash
 roundrobin config set-ollama http://localhost:11434
 ```
@@ -83,8 +86,7 @@ roundrobin config set-ollama http://localhost:11434
 
 ## Command-Line Usage
 
-### Interactive Chat Session
-Launch an interactive chat session that automatically rotates between free models:
+### Interactive Chat
 
 ```bash
 roundrobin
@@ -92,69 +94,50 @@ roundrobin
 roundrobin chat
 ```
 
-Available session commands:
-- `/models` - Displays real-time model availability and cooldown timers.
-- `/reset`  - Resets all model exhaustion cooldowns.
-- `exit`    - Exits the chat session.
+Session commands: `/models`, `/reset`, `exit`
 
 ### Single-Shot Prompt
-Send a prompt and stream the response to standard output:
 
 ```bash
 roundrobin prompt "Provide a standard implementation of binary search in TypeScript."
 ```
 
 ### Local API Proxy Server
-Start an OpenAI-compatible HTTP proxy server on port 8080:
 
 ```bash
 roundrobin serve --port 8080
 ```
 
-Configure tools such as Cursor, Aider, OpenCode, or Continue to use the local server:
 - **Base URL**: `http://localhost:8080/v1`
-- **API Key**: `roundrobin` (or any non-empty string)
-- **Model**: `roundrobin` (or any model identifier)
+- **API Key**: `roundrobin` (any non-empty string)
+- **Model**: `roundrobin` (any identifier; routing is automatic)
 
-Exposed endpoints:
-- `POST /v1/chat/completions` (supports standard JSON and SSE streaming)
-- `GET /v1/models`
-- `GET /status`
-- `GET /health`
+Endpoints: `POST /v1/chat/completions`, `GET /v1/models`, `GET /status`, `GET /health`
 
-### Inspect Model Availability
-Display current availability and cooldown status for all verified models and local Ollama models:
+### Inspect Models / Diagnostics
 
 ```bash
 roundrobin models
-```
-
-### Run Connectivity Diagnostics
-Verify connectivity to OpenCode Zen endpoints and local Ollama services:
-
-```bash
 roundrobin test
 ```
+
+`roundrobin test` checks Vercel CLI login, AI Gateway availability, and Ollama.
 
 ---
 
 ## SDK Usage
 
-Import RoundRobin into Node.js or TypeScript applications:
-
 ```typescript
 import { RoundRobin } from '@genoventures-labs/roundrobin';
 
 const client = new RoundRobin({
-  openCodeZenApiKey: process.env.OPENCODE_ZEN_API_KEY,
+  aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY,
   ollamaHost: 'http://localhost:11434',
 });
 
-// Non-streaming completion
 const response = await client.chat('Explain quicksort briefly.');
 console.log(response.choices[0].message.content);
 
-// Real-time streaming completion
 for await (const chunk of client.streamChat('List three deployment strategies.')) {
   process.stdout.write(chunk.choices[0]?.delta?.content || '');
 }
@@ -162,15 +145,17 @@ for await (const chunk of client.streamChat('List three deployment strategies.')
 
 ### Event Listeners
 
-Subscribe to routing events:
-
 ```typescript
 client.on('model-rotated', (fromModel, toModel, reason) => {
   console.log(`Model rotated: ${fromModel} -> ${toModel} (${reason.message})`);
 });
 
+client.on('gateway-unavailable', (reason) => {
+  console.warn(reason);
+});
+
 client.on('ollama-fallback', (models) => {
-  console.log(`Zen models exhausted. Fallback to local Ollama models:`, models);
+  console.log(`Gateway free models unavailable. Fallback to Ollama:`, models);
 });
 
 client.on('all-exhausted', (summary) => {
@@ -182,10 +167,11 @@ client.on('all-exhausted', (summary) => {
 
 ## How Routing Operates
 
-1. **Round-Robin Selection**: Requests are dispatched sequentially across verified OpenCode Zen free models.
-2. **Exhaustion Handling**: When a model returns HTTP 429, 402, or a quota exhaustion message, it enters a temporary cooldown period. RoundRobin immediately retries the request with the next model.
-3. **Local Ollama Fallback**: If all six cloud models are exhausted, RoundRobin queries the local Ollama daemon for capable generative models and forwards requests locally.
-4. **Clean Exit**: If both cloud free models and local Ollama models are unavailable, RoundRobin stops execution and delivers an informative diagnostic message without hanging or throwing unhandled errors.
+1. **Pro / AI Gateway check** — uses your Vercel CLI login to verify AI Gateway. If unavailable, free cloud models are empty.
+2. **Free catalog** — loads `$0` / `free`-tagged language models from AI Gateway (with curated fallbacks).
+3. **Round-robin** — dispatches across free Gateway models; 429/402/exhaustion marks a cooldown and rotates.
+4. **Ollama fallback** — if all free Gateway models fail, tries local capable Ollama models.
+5. **Clean exit** — if nothing remains, stops with a clear diagnostic (no hang).
 
 ---
 

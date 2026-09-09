@@ -10,7 +10,11 @@ describe('RoundRobinServer (OpenAI Compatible Proxy)', () => {
   let baseUrl: string;
 
   beforeEach(async () => {
-    router = new RoundRobinRouter({ persistState: false });
+    router = new RoundRobinRouter({
+      persistState: false,
+      requireAiGateway: false,
+      refreshFreeModels: false,
+    });
     // Random port for test isolation
     const testPort = 18000 + Math.floor(Math.random() * 1000);
     server = new RoundRobinServer({ router, port: testPort, host: '127.0.0.1' });
@@ -46,7 +50,7 @@ describe('RoundRobinServer (OpenAI Compatible Proxy)', () => {
       id: 'chatcmpl-mock',
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
-      model: 'big-pickle',
+      model: 'poolside/laguna-s-2.1-free',
       choices: [
         {
           index: 0,
@@ -77,14 +81,14 @@ describe('RoundRobinServer (OpenAI Compatible Proxy)', () => {
         id: 'chunk-1',
         object: 'chat.completion.chunk',
         created: 123456,
-        model: 'big-pickle',
+        model: 'poolside/laguna-s-2.1-free',
         choices: [{ index: 0, delta: { content: 'Hello ' }, finish_reason: null }],
       };
       yield {
         id: 'chunk-2',
         object: 'chat.completion.chunk',
         created: 123456,
-        model: 'big-pickle',
+        model: 'poolside/laguna-s-2.1-free',
         choices: [{ index: 0, delta: { content: 'world!' }, finish_reason: 'stop' }],
       };
     }
@@ -112,7 +116,10 @@ describe('RoundRobinServer (OpenAI Compatible Proxy)', () => {
   it('returns HTTP 503 with graceful message when all models are exhausted', async () => {
     vi.spyOn(router, 'chat').mockRejectedValue(
       new AllModelsExhaustedError({
-        zenExhaustedModels: ['big-pickle', 'mimo-v2.5-free'],
+        gatewayExhaustedModels: [
+          'inclusionai/ling-3.0-flash-fin-free',
+          'poolside/laguna-s-2.1-free',
+        ],
         ollamaChecked: true,
         ollamaModels: [],
       })

@@ -6,17 +6,17 @@ import { ChatCompletionResponse, ModelInfo } from '../src/types.js';
 describe('RoundRobinRouter', () => {
   const customModels: ModelInfo[] = [
     {
-      id: 'mock-zen-1',
-      name: 'Mock Zen 1',
-      provider: 'opencode-zen',
-      endpoint: 'https://opencode.ai/zen/v1/chat/completions',
+      id: 'mock-gateway-1',
+      name: 'Mock Gateway 1',
+      provider: 'ai-gateway',
+      endpoint: 'https://ai-gateway.vercel.sh/v1/chat/completions',
       isFree: true,
     },
     {
-      id: 'mock-zen-2',
-      name: 'Mock Zen 2',
-      provider: 'opencode-zen',
-      endpoint: 'https://opencode.ai/zen/v1/chat/completions',
+      id: 'mock-gateway-2',
+      name: 'Mock Gateway 2',
+      provider: 'ai-gateway',
+      endpoint: 'https://ai-gateway.vercel.sh/v1/chat/completions',
       isFree: true,
     },
   ];
@@ -31,9 +31,11 @@ describe('RoundRobinRouter', () => {
 
   it('rotates to next free model when current model is exhausted', async () => {
     const router = new RoundRobinRouter({
-      customZenModels: customModels,
+      customGatewayModels: customModels,
       persistState: false,
       cooldownMs: 60_000,
+      requireAiGateway: false,
+      refreshFreeModels: false,
     });
 
     const rotatedEvents: Array<{ from: string; to: string }> = [];
@@ -41,25 +43,24 @@ describe('RoundRobinRouter', () => {
       rotatedEvents.push({ from, to });
     });
 
-    // Mock zenClient.chat: mock-zen-1 fails with ModelExhaustedError (429), mock-zen-2 succeeds
     const mockSuccessResponse: ChatCompletionResponse = {
       id: 'chatcmpl-123',
       object: 'chat.completion',
       created: Date.now(),
-      model: 'mock-zen-2',
+      model: 'mock-gateway-2',
       choices: [
         {
           index: 0,
-          message: { role: 'assistant', content: 'Hello from mock-zen-2' },
+          message: { role: 'assistant', content: 'Hello from mock-gateway-2' },
           finish_reason: 'stop',
         },
       ],
     };
 
-    const zenClient = (router as any).zenClient;
-    vi.spyOn(zenClient, 'chat').mockImplementation(async (model: ModelInfo) => {
-      if (model.id === 'mock-zen-1') {
-        throw new ModelExhaustedError('mock-zen-1', {
+    const gatewayClient = (router as any).gatewayClient;
+    vi.spyOn(gatewayClient, 'chat').mockImplementation(async (model: ModelInfo) => {
+      if (model.id === 'mock-gateway-1') {
+        throw new ModelExhaustedError('mock-gateway-1', {
           type: 'rate_limit',
           message: 'Rate limit exceeded (429)',
           statusCode: 429,
@@ -72,21 +73,22 @@ describe('RoundRobinRouter', () => {
       messages: [{ role: 'user', content: 'Hi' }],
     });
 
-    expect(result.choices[0].message.content).toBe('Hello from mock-zen-2');
+    expect(result.choices[0].message.content).toBe('Hello from mock-gateway-2');
     expect(rotatedEvents.length).toBe(1);
-    expect(rotatedEvents[0]).toEqual({ from: 'mock-zen-1', to: 'mock-zen-2' });
+    expect(rotatedEvents[0]).toEqual({ from: 'mock-gateway-1', to: 'mock-gateway-2' });
 
-    // Verify mock-zen-1 is marked as exhausted
     const statuses = router.getModelStatuses();
-    const zen1Status = statuses.find((s) => s.model.id === 'mock-zen-1');
-    expect(zen1Status?.isExhausted).toBe(true);
+    const g1Status = statuses.find((s) => s.model.id === 'mock-gateway-1');
+    expect(g1Status?.isExhausted).toBe(true);
   });
 
-  it('falls back to Ollama when all OpenCode Zen models are exhausted', async () => {
+  it('falls back to Ollama when all AI Gateway models are exhausted', async () => {
     const router = new RoundRobinRouter({
-      customZenModels: customModels,
+      customGatewayModels: customModels,
       persistState: false,
       cooldownMs: 60_000,
+      requireAiGateway: false,
+      refreshFreeModels: false,
     });
 
     let ollamaFallbackCalled = false;
@@ -95,8 +97,8 @@ describe('RoundRobinRouter', () => {
       expect(models).toContain('qwen2.5-coder:latest');
     });
 
-    const zenClient = (router as any).zenClient;
-    vi.spyOn(zenClient, 'chat').mockRejectedValue(
+    const gatewayClient = (router as any).gatewayClient;
+    vi.spyOn(gatewayClient, 'chat').mockRejectedValue(
       new ModelExhaustedError('mock', {
         type: 'rate_limit',
         message: 'Rate limited',
@@ -146,10 +148,12 @@ describe('RoundRobinRouter', () => {
     expect(result._roundRobin?.provider).toBe('ollama');
   });
 
-  it('gracefully ends the loop and lets user know when all Zen models are exhausted and no Ollama models are available', async () => {
+  it('gracefully ends when all Gateway models are exhausted and no Ollama models are available', async () => {
     const router = new RoundRobinRouter({
-      customZenModels: customModels,
+      customGatewayModels: customModels,
       persistState: false,
+      requireAiGateway: false,
+      refreshFreeModels: false,
     });
 
     let allExhaustedEmitted = false;
@@ -158,8 +162,8 @@ describe('RoundRobinRouter', () => {
       expect(summary.message).toContain('All free models are currently exhausted');
     });
 
-    const zenClient = (router as any).zenClient;
-    vi.spyOn(zenClient, 'chat').mockRejectedValue(
+    const gatewayClient = (router as any).gatewayClient;
+    vi.spyOn(gatewayClient, 'chat').mockRejectedValue(
       new ModelExhaustedError('mock', {
         type: 'rate_limit',
         message: 'Rate limit hit',
@@ -168,7 +172,6 @@ describe('RoundRobinRouter', () => {
     );
 
     const ollamaClient = (router as any).ollamaClient;
-    // Ollama returns 0 capable models (or is offline)
     vi.spyOn(ollamaClient, 'listCapableModels').mockResolvedValue([]);
 
     await expect(
@@ -178,14 +181,16 @@ describe('RoundRobinRouter', () => {
     expect(allExhaustedEmitted).toBe(true);
   });
 
-  it('gracefully ends the loop when all Zen models are exhausted and all Ollama models error out', async () => {
+  it('gracefully ends when all Gateway models are exhausted and all Ollama models error out', async () => {
     const router = new RoundRobinRouter({
-      customZenModels: customModels,
+      customGatewayModels: customModels,
       persistState: false,
+      requireAiGateway: false,
+      refreshFreeModels: false,
     });
 
-    const zenClient = (router as any).zenClient;
-    vi.spyOn(zenClient, 'chat').mockRejectedValue(
+    const gatewayClient = (router as any).gatewayClient;
+    vi.spyOn(gatewayClient, 'chat').mockRejectedValue(
       new ModelExhaustedError('mock', {
         type: 'rate_limit',
         message: 'Rate limit hit',
@@ -219,15 +224,17 @@ describe('RoundRobinRouter', () => {
     expect(allExhaustedEmitted).toBe(true);
   });
 
-  it('streams completion and falls back to Ollama streaming when Zen models are exhausted', async () => {
+  it('streams completion and falls back to Ollama streaming when Gateway models are exhausted', async () => {
     const router = new RoundRobinRouter({
-      customZenModels: customModels,
+      customGatewayModels: customModels,
       persistState: false,
+      requireAiGateway: false,
+      refreshFreeModels: false,
     });
 
-    const zenClient = (router as any).zenClient;
-    vi.spyOn(zenClient, 'streamChat').mockImplementation(async function* () {
-      throw new ModelExhaustedError('mock-zen', {
+    const gatewayClient = (router as any).gatewayClient;
+    vi.spyOn(gatewayClient, 'streamChat').mockImplementation(async function* () {
+      throw new ModelExhaustedError('mock-gateway', {
         type: 'rate_limit',
         message: 'Rate limit reached',
         statusCode: 429,
@@ -262,5 +269,38 @@ describe('RoundRobinRouter', () => {
 
     expect(chunks.length).toBe(1);
     expect(chunks[0].choices[0].delta.content).toBe('Streaming Ollama!');
+  });
+
+  it('treats free Gateway models as unavailable when AI Gateway/Pro is missing', async () => {
+    const auth = await import('../src/auth.js');
+    vi.spyOn(auth, 'checkVercelAiGatewayStatus').mockResolvedValue({
+      loggedIn: true,
+      username: 'tester',
+      gatewayAvailable: false,
+      reason:
+        'AI Gateway is unavailable. It requires a Vercel Pro membership. Free Gateway models are not available without AI Gateway.',
+    });
+
+    const router = new RoundRobinRouter({
+      customGatewayModels: customModels,
+      persistState: false,
+      requireAiGateway: true,
+      refreshFreeModels: false,
+    });
+
+    let gatewayUnavailable = false;
+    router.on('gateway-unavailable', () => {
+      gatewayUnavailable = true;
+    });
+
+    const ollamaClient = (router as any).ollamaClient;
+    vi.spyOn(ollamaClient, 'listCapableModels').mockResolvedValue([]);
+
+    await expect(
+      router.chat({ messages: [{ role: 'user', content: 'Test' }] })
+    ).rejects.toThrowError(AllModelsExhaustedError);
+
+    expect(gatewayUnavailable).toBe(true);
+    expect(router.getModelStatuses().length).toBe(0);
   });
 });

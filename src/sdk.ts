@@ -13,18 +13,20 @@ import {
 export class RoundRobin {
   private router: RoundRobinRouter;
   private server?: RoundRobinServer;
-  private config: Required<RoundRobinConfig> & { port: number };
+  private config: ReturnType<typeof resolveConfig>;
 
   constructor(options: Partial<RoundRobinConfig> & { routerOptions?: RouterOptions } = {}) {
     this.config = resolveConfig(options);
     this.router = new RoundRobinRouter({
-      openCodeZenApiKey: this.config.openCodeZenApiKey,
-      openCodeZenBaseUrl: this.config.openCodeZenBaseUrl,
+      aiGatewayApiKey: this.config.aiGatewayApiKey,
+      aiGatewayBaseUrl: this.config.aiGatewayBaseUrl,
       ollamaHost: this.config.ollamaHost,
       cooldownMs: this.config.cooldownMs,
       requestTimeoutMs: this.config.requestTimeoutMs,
       maxRetriesPerModel: this.config.maxRetriesPerModel,
       autoCooldownReset: this.config.autoCooldownReset,
+      requireAiGateway: this.config.requireAiGateway,
+      refreshFreeModels: this.config.refreshFreeModels,
       ...options.routerOptions,
     });
   }

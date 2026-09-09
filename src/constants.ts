@@ -1,69 +1,49 @@
 import { ModelInfo } from './types.js';
 
 /**
- * OpenCode Zen Verified Free Models
- * Source: https://opencode.ai/docs/zen/
- * 
- * Only models explicitly listed as "Free" in OpenCode Zen pricing:
- * - big-pickle
- * - mimo-v2.5-free
- * - ling-3.0-flash-fin-free
- * - nemotron-3-ultra-free
- * - nemotron-3.5-lightning-free
- * - muse-spark-1.2-contributor-free
+ * Vercel AI Gateway verified free language models ($0 input/output, `free` tag).
+ * Source: https://ai-gateway.vercel.sh/v1/models and https://vercel.com/ai-gateway/models
+ *
+ * Prefer explicit `*-free` ids when twins exist in the catalog.
+ * RoundRobin may refresh this list at runtime via the public catalog API.
  */
-export const OPENCODE_ZEN_FREE_MODELS: ReadonlyArray<ModelInfo> = [
+export const AI_GATEWAY_FREE_MODELS: ReadonlyArray<ModelInfo> = [
   {
-    id: 'big-pickle',
-    name: 'Big Pickle',
-    provider: 'opencode-zen',
-    endpoint: 'https://opencode.ai/zen/v1/chat/completions',
+    id: 'inclusionai/ling-3.0-flash-fin-free',
+    name: 'Ling 3.0 Flash Fin (Free)',
+    provider: 'ai-gateway',
+    endpoint: 'https://ai-gateway.vercel.sh/v1/chat/completions',
     isFree: true,
-    description: 'OpenCode Zen verified high-capability free model',
+    description: 'InclusionAI finance-enhanced MoE free language model via Vercel AI Gateway',
+    contextWindow: 256000,
   },
   {
-    id: 'mimo-v2.5-free',
-    name: 'MiMo-V2.5 Free',
-    provider: 'opencode-zen',
-    endpoint: 'https://opencode.ai/zen/v1/chat/completions',
+    id: 'inclusionai/ling-3.0-flash-sante-free',
+    name: 'Ling 3.0 Flash Sante (Free)',
+    provider: 'ai-gateway',
+    endpoint: 'https://ai-gateway.vercel.sh/v1/chat/completions',
     isFree: true,
-    description: 'OpenCode Zen verified fast reasoning free model',
+    description: 'InclusionAI health-specialized free language model via Vercel AI Gateway',
+    contextWindow: 256000,
   },
   {
-    id: 'ling-3.0-flash-fin-free',
-    name: 'Ling 3.0 Flash Fin Free',
-    provider: 'opencode-zen',
-    endpoint: 'https://opencode.ai/zen/v1/chat/completions',
+    id: 'poolside/laguna-s-2.1-free',
+    name: 'Laguna S 2.1 Free',
+    provider: 'ai-gateway',
+    endpoint: 'https://ai-gateway.vercel.sh/v1/chat/completions',
     isFree: true,
-    description: 'OpenCode Zen verified flash speed financial & coding free model',
-  },
-  {
-    id: 'nemotron-3-ultra-free',
-    name: 'Nemotron 3 Ultra Free',
-    provider: 'opencode-zen',
-    endpoint: 'https://opencode.ai/zen/v1/chat/completions',
-    isFree: true,
-    description: 'OpenCode Zen verified NVIDIA Nemotron 3 Ultra trial free model',
-  },
-  {
-    id: 'nemotron-3.5-lightning-free',
-    name: 'Nemotron 3.5 Lightning Free',
-    provider: 'opencode-zen',
-    endpoint: 'https://opencode.ai/zen/v1/chat/completions',
-    isFree: true,
-    description: 'OpenCode Zen verified NVIDIA Nemotron 3.5 Lightning fast free model',
-  },
-  {
-    id: 'muse-spark-1.2-contributor-free',
-    name: 'Muse Spark 1.2 Contributor Free',
-    provider: 'opencode-zen',
-    endpoint: 'https://opencode.ai/zen/v1/chat/completions',
-    isFree: true,
-    description: 'OpenCode Zen verified Meta contributor free tier model',
+    description: 'Poolside Laguna S 2.1 free open-weight coding model via Vercel AI Gateway',
+    contextWindow: 256000,
   },
 ];
 
-export const DEFAULT_ZEN_BASE_URL = 'https://opencode.ai/zen/v1';
+/** @deprecated Use AI_GATEWAY_FREE_MODELS */
+export const OPENCODE_ZEN_FREE_MODELS = AI_GATEWAY_FREE_MODELS;
+
+export const DEFAULT_AI_GATEWAY_BASE_URL = 'https://ai-gateway.vercel.sh/v1';
+/** @deprecated Use DEFAULT_AI_GATEWAY_BASE_URL */
+export const DEFAULT_ZEN_BASE_URL = DEFAULT_AI_GATEWAY_BASE_URL;
+
 export const DEFAULT_OLLAMA_HOST = 'http://localhost:11434';
 export const DEFAULT_COOLDOWN_MS = 60_000; // 1 minute default cooldown on rate limit
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000; // 60s timeout
@@ -92,4 +72,6 @@ export const EXHAUSTION_MESSAGE_PATTERNS = [
   /model_rate_limit/i,
   /requests_per_minute/i,
   /tokens_per_minute/i,
+  /pro\s*(plan|membership)/i,
+  /ai\s*gateway.*(unavailable|not\s*available)/i,
 ];

@@ -3,12 +3,13 @@ import path from 'node:path';
 import os from 'node:os';
 import { config as loadDotEnv } from 'dotenv';
 import {
+  DEFAULT_AI_GATEWAY_BASE_URL,
   DEFAULT_COOLDOWN_MS,
   DEFAULT_OLLAMA_HOST,
   DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_SERVER_PORT,
-  DEFAULT_ZEN_BASE_URL,
 } from './constants.js';
+import { resolveAiGatewayApiKey } from './auth.js';
 import { RoundRobinConfig } from './types.js';
 
 // Attempt to load .env in cwd
@@ -93,22 +94,44 @@ export function saveUserConfig(newConfig: Partial<RoundRobinConfig>): string {
   return filePath;
 }
 
-export function resolveConfig(overrides: Partial<RoundRobinConfig> = {}): Required<RoundRobinConfig> & { port: number } {
+export function resolveConfig(
+  overrides: Partial<RoundRobinConfig> = {}
+): Required<
+  Pick<
+    RoundRobinConfig,
+    | 'aiGatewayApiKey'
+    | 'aiGatewayBaseUrl'
+    | 'ollamaHost'
+    | 'cooldownMs'
+    | 'requestTimeoutMs'
+    | 'maxRetriesPerModel'
+    | 'autoCooldownReset'
+    | 'requireAiGateway'
+    | 'refreshFreeModels'
+  >
+> & {
+  port: number;
+  /** @deprecated */
+  openCodeZenApiKey: string;
+  /** @deprecated */
+  openCodeZenBaseUrl: string;
+} {
   const fileConfig = loadUserConfig();
 
-  const apiKey =
-    overrides.openCodeZenApiKey ||
-    process.env.OPENCODE_ZEN_API_KEY ||
-    process.env.OPENCODE_API_KEY ||
-    process.env.ZEN_API_KEY ||
-    fileConfig.openCodeZenApiKey ||
-    '';
+  const apiKey = resolveAiGatewayApiKey(
+    overrides.aiGatewayApiKey ||
+      overrides.openCodeZenApiKey ||
+      fileConfig.aiGatewayApiKey
+  );
 
-  const openCodeZenBaseUrl =
+  const aiGatewayBaseUrl =
+    overrides.aiGatewayBaseUrl ||
     overrides.openCodeZenBaseUrl ||
+    process.env.AI_GATEWAY_BASE_URL ||
     process.env.OPENCODE_ZEN_BASE_URL ||
+    fileConfig.aiGatewayBaseUrl ||
     fileConfig.openCodeZenBaseUrl ||
-    DEFAULT_ZEN_BASE_URL;
+    DEFAULT_AI_GATEWAY_BASE_URL;
 
   const ollamaHost =
     overrides.ollamaHost ||
@@ -118,38 +141,49 @@ export function resolveConfig(overrides: Partial<RoundRobinConfig> = {}): Requir
 
   const cooldownMs =
     overrides.cooldownMs ??
-    (process.env.ROUNDROBIN_COOLDOWN_MS ? parseInt(process.env.ROUNDROBIN_COOLDOWN_MS, 10) : undefined) ??
+    (process.env.ROUNDROBIN_COOLDOWN_MS
+      ? parseInt(process.env.ROUNDROBIN_COOLDOWN_MS, 10)
+      : undefined) ??
     fileConfig.cooldownMs ??
     DEFAULT_COOLDOWN_MS;
 
   const requestTimeoutMs =
     overrides.requestTimeoutMs ??
-    (process.env.ROUNDROBIN_TIMEOUT_MS ? parseInt(process.env.ROUNDROBIN_TIMEOUT_MS, 10) : undefined) ??
+    (process.env.ROUNDROBIN_TIMEOUT_MS
+      ? parseInt(process.env.ROUNDROBIN_TIMEOUT_MS, 10)
+      : undefined) ??
     fileConfig.requestTimeoutMs ??
     DEFAULT_REQUEST_TIMEOUT_MS;
 
   const maxRetriesPerModel =
-    overrides.maxRetriesPerModel ??
-    fileConfig.maxRetriesPerModel ??
-    1;
+    overrides.maxRetriesPerModel ?? fileConfig.maxRetriesPerModel ?? 1;
 
   const autoCooldownReset =
-    overrides.autoCooldownReset ??
-    fileConfig.autoCooldownReset ??
-    true;
+    overrides.autoCooldownReset ?? fileConfig.autoCooldownReset ?? true;
+
+  const requireAiGateway =
+    overrides.requireAiGateway ?? fileConfig.requireAiGateway ?? true;
+
+  const refreshFreeModels =
+    overrides.refreshFreeModels ?? fileConfig.refreshFreeModels ?? true;
 
   const port =
-    (process.env.ROUNDROBIN_PORT ? parseInt(process.env.ROUNDROBIN_PORT, 10) : undefined) ??
-    DEFAULT_SERVER_PORT;
+    (process.env.ROUNDROBIN_PORT
+      ? parseInt(process.env.ROUNDROBIN_PORT, 10)
+      : undefined) ?? DEFAULT_SERVER_PORT;
 
   return {
+    aiGatewayApiKey: apiKey,
+    aiGatewayBaseUrl,
     openCodeZenApiKey: apiKey,
-    openCodeZenBaseUrl,
+    openCodeZenBaseUrl: aiGatewayBaseUrl,
     ollamaHost,
     cooldownMs,
     requestTimeoutMs,
     maxRetriesPerModel,
     autoCooldownReset,
+    requireAiGateway,
+    refreshFreeModels,
     port,
   };
 }

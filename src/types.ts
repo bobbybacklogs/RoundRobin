@@ -40,7 +40,7 @@ export interface ChatCompletionResponse {
   // Extra RoundRobin routing metadata
   _roundRobin?: {
     routedModel: string;
-    provider: 'opencode-zen' | 'ollama';
+    provider: 'ai-gateway' | 'ollama';
     attemptsCount: number;
     rotationHistory: Array<{ model: string; reason?: string }>;
   };
@@ -65,11 +65,11 @@ export interface ChatCompletionChunk {
   choices: ChatCompletionChunkChoice[];
   _roundRobin?: {
     routedModel: string;
-    provider: 'opencode-zen' | 'ollama';
+    provider: 'ai-gateway' | 'ollama';
   };
 }
 
-export type ProviderType = 'opencode-zen' | 'ollama';
+export type ProviderType = 'ai-gateway' | 'ollama';
 
 export interface ModelInfo {
   id: string;
@@ -98,20 +98,39 @@ export interface ExhaustionReason {
 }
 
 export interface RoundRobinConfig {
+  aiGatewayApiKey?: string;
+  aiGatewayBaseUrl?: string;
+  /** @deprecated Use aiGatewayApiKey */
   openCodeZenApiKey?: string;
+  /** @deprecated Use aiGatewayBaseUrl */
   openCodeZenBaseUrl?: string;
   ollamaHost?: string;
   cooldownMs?: number;
   requestTimeoutMs?: number;
   maxRetriesPerModel?: number;
   autoCooldownReset?: boolean;
+  /**
+   * When true (default), probe Vercel CLI for AI Gateway / Pro availability.
+   * If AI Gateway is unavailable, free cloud models are treated as unavailable.
+   */
+  requireAiGateway?: boolean;
+  /** Refresh free model list from the live AI Gateway catalog on startup. */
+  refreshFreeModels?: boolean;
 }
 
 export interface RouterEvents {
   'model-rotated': (fromModel: string, toModel: string, reason: ExhaustionReason) => void;
   'model-exhausted': (model: string, reason: ExhaustionReason, cooldownMs: number) => void;
   'ollama-fallback': (availableModels: string[]) => void;
-  'all-exhausted': (summary: { zenExhausted: string[]; ollamaChecked: boolean; ollamaModels: string[]; message: string }) => void;
+  'all-exhausted': (summary: {
+    gatewayExhausted: string[];
+    /** @deprecated Use gatewayExhausted */
+    zenExhausted: string[];
+    ollamaChecked: boolean;
+    ollamaModels: string[];
+    message: string;
+  }) => void;
+  'gateway-unavailable': (reason: string) => void;
   'request-start': (model: string) => void;
   'request-success': (model: string, durationMs: number) => void;
 }

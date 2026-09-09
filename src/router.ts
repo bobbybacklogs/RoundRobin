@@ -1,11 +1,13 @@
 import EventEmitter from 'node:events';
 import {
+  AI_GATEWAY_FREE_MODELS,
+  DEFAULT_AI_GATEWAY_BASE_URL,
   DEFAULT_COOLDOWN_MS,
   DEFAULT_OLLAMA_HOST,
-  DEFAULT_ZEN_BASE_URL,
-  OPENCODE_ZEN_FREE_MODELS,
 } from './constants.js';
-import { AllModelsExhaustedError, ModelExhaustedError, RoundRobinError } from './errors.js';
+import { checkVercelAiGatewayStatus } from './auth.js';
+import { AllModelsExhaustedError, ModelExhaustedError } from './errors.js';
+import { AiGatewayClient } from './gateway.js';
 import { OllamaClient } from './ollama.js';
 import {
   ChatCompletionChunk,
@@ -18,22 +20,28 @@ import {
 } from './types.js';
 import { isNetworkExhaustionError } from './utils.js';
 import { loadRouterState, saveRouterState } from './config.js';
-import { OpenCodeZenClient } from './zen.js';
 
 export interface RouterOptions extends Partial<RoundRobinConfig> {
+  customGatewayModels?: ModelInfo[];
+  /** @deprecated Use customGatewayModels */
   customZenModels?: ModelInfo[];
   persistState?: boolean;
 }
 
 export class RoundRobinRouter extends EventEmitter {
-  private zenClient: OpenCodeZenClient;
+  private gatewayClient: AiGatewayClient;
   private ollamaClient: OllamaClient;
-  private zenModels: ModelInfo[];
+  private gatewayModels: ModelInfo[];
   private modelStatuses: Map<string, ModelStatus> = new Map();
   private currentIndex: number = 0;
   private cooldownMs: number;
   private autoCooldownReset: boolean;
   private persistState: boolean;
+  private requireAiGateway: boolean;
+  private refreshFreeModels: boolean;
+  private gatewayReady: boolean | null = null;
+  private gatewayUnavailableReason?: string;
+  private modelsInitialized = false;
 
   constructor(options: RouterOptions = {}) {
     super();
@@ -41,10 +49,12 @@ export class RoundRobinRouter extends EventEmitter {
     this.cooldownMs = options.cooldownMs ?? DEFAULT_COOLDOWN_MS;
     this.autoCooldownReset = options.autoCooldownReset ?? true;
     this.persistState = options.persistState ?? true;
+    this.requireAiGateway = options.requireAiGateway ?? true;
+    this.refreshFreeModels = options.refreshFreeModels ?? true;
 
-    this.zenClient = new OpenCodeZenClient({
-      apiKey: options.openCodeZenApiKey,
-      baseUrl: options.openCodeZenBaseUrl || DEFAULT_ZEN_BASE_URL,
+    this.gatewayClient = new AiGatewayClient({
+      apiKey: options.aiGatewayApiKey || options.openCodeZenApiKey,
+      baseUrl: options.aiGatewayBaseUrl || options.openCodeZenBaseUrl || DEFAULT_AI_GATEWAY_BASE_URL,
       timeoutMs: options.requestTimeoutMs,
     });
 
@@ -53,16 +63,26 @@ export class RoundRobinRouter extends EventEmitter {
       timeoutMs: options.requestTimeoutMs,
     });
 
-    this.zenModels = options.customZenModels && options.customZenModels.length > 0
-      ? [...options.customZenModels]
-      : [...OPENCODE_ZEN_FREE_MODELS];
+    const custom =
+      options.customGatewayModels && options.customGatewayModels.length > 0
+        ? options.customGatewayModels
+        : options.customZenModels && options.customZenModels.length > 0
+          ? options.customZenModels
+          : null;
 
-    // Load persisted state if enabled
+    this.gatewayModels = custom
+      ? [...custom]
+      : [...AI_GATEWAY_FREE_MODELS];
+
+    this.initializeStatusesFromModels();
+  }
+
+  private initializeStatusesFromModels(): void {
     const savedState = this.persistState ? loadRouterState() : { modelCooldowns: {} };
     const now = Date.now();
+    this.modelStatuses.clear();
 
-    // Initialize statuses for all verified free models
-    for (const model of this.zenModels) {
+    for (const model of this.gatewayModels) {
       const saved = savedState.modelCooldowns[model.id];
       const isStillExhausted = Boolean(saved && saved.exhaustedUntil && saved.exhaustedUntil > now);
 
@@ -81,7 +101,7 @@ export class RoundRobinRouter extends EventEmitter {
   }
 
   public setApiKey(apiKey: string): void {
-    this.zenClient.setApiKey(apiKey);
+    this.gatewayClient.setApiKey(apiKey);
   }
 
   public setOllamaHost(host: string): void {
@@ -152,31 +172,86 @@ export class RoundRobinRouter extends EventEmitter {
   }
 
   /**
-   * Get list of currently available (non-exhausted) OpenCode Zen free models
+   * Ensure AI Gateway (Pro) is available and optionally refresh free model catalog.
+   * If AI Gateway is unavailable, free cloud models are empty.
    */
-  public getAvailableZenModels(): ModelInfo[] {
+  public async ensureGatewayReady(): Promise<boolean> {
+    if (this.modelsInitialized && this.gatewayReady !== null) {
+      return this.gatewayReady;
+    }
+
+    if (this.requireAiGateway) {
+      const status = await checkVercelAiGatewayStatus({
+        apiKeyPresent: Boolean(this.gatewayClient.getApiKey()),
+      });
+      this.gatewayReady = status.gatewayAvailable;
+      if (!status.gatewayAvailable) {
+        this.gatewayUnavailableReason =
+          status.reason ||
+          'AI Gateway requires Pro membership. Free Gateway models are not available.';
+        this.gatewayModels = [];
+        this.modelStatuses.clear();
+        this.emit('gateway-unavailable', this.gatewayUnavailableReason);
+        this.modelsInitialized = true;
+        return false;
+      }
+    } else {
+      this.gatewayReady = true;
+    }
+
+    if (this.refreshFreeModels) {
+      try {
+        const live = await this.gatewayClient.listFreeModels();
+        if (live.length > 0) {
+          this.gatewayModels = live;
+          this.initializeStatusesFromModels();
+        }
+      } catch {
+        // Keep static fallback list when catalog refresh fails.
+      }
+    }
+
+    this.modelsInitialized = true;
+    return this.gatewayReady !== false;
+  }
+
+  public getAvailableGatewayModels(): ModelInfo[] {
     this.checkAndResetCooldowns();
-    return this.zenModels.filter((m) => {
+    return this.gatewayModels.filter((m) => {
       const s = this.modelStatuses.get(m.id);
       return !s || !s.isExhausted;
     });
   }
 
-  /**
-   * Execute chat completion with free-model round-robin rotation,
-   * falling back to Ollama when all Zen free models are exhausted,
-   * and gracefully terminating if none are available.
-   */
+  /** @deprecated Use getAvailableGatewayModels */
+  public getAvailableZenModels(): ModelInfo[] {
+    return this.getAvailableGatewayModels();
+  }
+
+  private emitAllExhausted(
+    gatewayExhaustedList: string[],
+    ollamaModels: string[],
+    message: string
+  ): void {
+    this.emit('all-exhausted', {
+      gatewayExhausted: gatewayExhaustedList,
+      zenExhausted: gatewayExhaustedList,
+      ollamaChecked: true,
+      ollamaModels,
+      message,
+    });
+  }
+
   public async chat(options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
+    await this.ensureGatewayReady();
     this.checkAndResetCooldowns();
 
     const rotationHistory: Array<{ model: string; reason?: string }> = [];
-    const triedZenModels = new Set<string>();
+    const triedGatewayModels = new Set<string>();
 
-    // 1. Try available OpenCode Zen verified free models in round-robin order
-    const totalZen = this.zenModels.length;
-    for (let i = 0; i < totalZen; i++) {
-      const model = this.zenModels[this.currentIndex % totalZen];
+    const totalGateway = this.gatewayModels.length;
+    for (let i = 0; i < totalGateway; i++) {
+      const model = this.gatewayModels[this.currentIndex % totalGateway];
       this.currentIndex++;
 
       const status = this.modelStatuses.get(model.id);
@@ -184,12 +259,12 @@ export class RoundRobinRouter extends EventEmitter {
         continue;
       }
 
-      triedZenModels.add(model.id);
+      triedGatewayModels.add(model.id);
       this.emit('request-start', model.id);
       const startTime = Date.now();
 
       try {
-        const response = await this.zenClient.chat(model, options);
+        const response = await this.gatewayClient.chat(model, options);
         if (status) {
           status.consecutiveFailures = 0;
           status.lastUsedAt = Date.now();
@@ -220,10 +295,9 @@ export class RoundRobinRouter extends EventEmitter {
         this.markModelExhausted(model.id, reason);
         rotationHistory.push({ model: model.id, reason: reason.message });
 
-        // Find next candidate for event emission
-        const nextModel = this.zenModels.find((m) => {
+        const nextModel = this.gatewayModels.find((m) => {
           const s = this.modelStatuses.get(m.id);
-          return !s?.isExhausted && !triedZenModels.has(m.id);
+          return !s?.isExhausted && !triedGatewayModels.has(m.id);
         });
 
         if (nextModel) {
@@ -232,12 +306,20 @@ export class RoundRobinRouter extends EventEmitter {
       }
     }
 
-    // 2. All OpenCode Zen free models are exhausted! Route back and check for Ollama and capable models.
-    const zenExhaustedList = Array.from(triedZenModels);
+    const gatewayExhaustedList =
+      triedGatewayModels.size > 0
+        ? Array.from(triedGatewayModels)
+        : this.gatewayUnavailableReason
+          ? ['(ai-gateway-unavailable)']
+          : [];
+
     const capableOllamaModels = await this.ollamaClient.listCapableModels();
 
     if (capableOllamaModels.length > 0) {
-      this.emit('ollama-fallback', capableOllamaModels.map((m) => m.id));
+      this.emit(
+        'ollama-fallback',
+        capableOllamaModels.map((m) => m.id)
+      );
 
       for (const ollamaModel of capableOllamaModels) {
         this.emit('request-start', ollamaModel.id);
@@ -255,43 +337,34 @@ export class RoundRobinRouter extends EventEmitter {
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : String(err);
           rotationHistory.push({ model: ollamaModel.id, reason: errMsg });
-          // Rotate to next capable Ollama model
         }
       }
     }
 
-    // 3. If none: gracefully end the loop and let the user know.
     const error = new AllModelsExhaustedError({
-      zenExhaustedModels: zenExhaustedList,
+      gatewayExhaustedModels: gatewayExhaustedList,
       ollamaChecked: true,
       ollamaModels: capableOllamaModels.map((m) => m.id),
       ollamaHost: this.ollamaClient.getHost(),
+      reason: this.gatewayUnavailableReason,
     });
 
-    this.emit('all-exhausted', {
-      zenExhausted: zenExhaustedList,
-      ollamaChecked: true,
-      ollamaModels: capableOllamaModels.map((m) => m.id),
-      message: error.gracefulNotice,
-    });
-
+    this.emitAllExhausted(gatewayExhaustedList, capableOllamaModels.map((m) => m.id), error.gracefulNotice);
     throw error;
   }
 
-  /**
-   * Execute streaming chat completion with rotation and fallback
-   */
   public async *streamChat(
     options: ChatCompletionOptions
   ): AsyncGenerator<ChatCompletionChunk, void, unknown> {
+    await this.ensureGatewayReady();
     this.checkAndResetCooldowns();
 
     const rotationHistory: Array<{ model: string; reason?: string }> = [];
-    const triedZenModels = new Set<string>();
+    const triedGatewayModels = new Set<string>();
 
-    const totalZen = this.zenModels.length;
-    for (let i = 0; i < totalZen; i++) {
-      const model = this.zenModels[this.currentIndex % totalZen];
+    const totalGateway = this.gatewayModels.length;
+    for (let i = 0; i < totalGateway; i++) {
+      const model = this.gatewayModels[this.currentIndex % totalGateway];
       this.currentIndex++;
 
       const status = this.modelStatuses.get(model.id);
@@ -299,13 +372,13 @@ export class RoundRobinRouter extends EventEmitter {
         continue;
       }
 
-      triedZenModels.add(model.id);
+      triedGatewayModels.add(model.id);
       this.emit('request-start', model.id);
       const startTime = Date.now();
 
       let hasYieldedAnyChunk = false;
       try {
-        const stream = this.zenClient.streamChat(model, options);
+        const stream = this.gatewayClient.streamChat(model, options);
         for await (const chunk of stream) {
           hasYieldedAnyChunk = true;
           yield chunk;
@@ -318,7 +391,6 @@ export class RoundRobinRouter extends EventEmitter {
         this.emit('request-success', model.id, Date.now() - startTime);
         return;
       } catch (err: unknown) {
-        // If we already started outputting stream to user, we cannot silently rotate mid-sentence
         if (hasYieldedAnyChunk) {
           throw err;
         }
@@ -341,9 +413,9 @@ export class RoundRobinRouter extends EventEmitter {
         this.markModelExhausted(model.id, reason);
         rotationHistory.push({ model: model.id, reason: reason.message });
 
-        const nextModel = this.zenModels.find((m) => {
+        const nextModel = this.gatewayModels.find((m) => {
           const s = this.modelStatuses.get(m.id);
-          return !s?.isExhausted && !triedZenModels.has(m.id);
+          return !s?.isExhausted && !triedGatewayModels.has(m.id);
         });
 
         if (nextModel) {
@@ -352,12 +424,20 @@ export class RoundRobinRouter extends EventEmitter {
       }
     }
 
-    // Fallback to Ollama
-    const zenExhaustedList = Array.from(triedZenModels);
+    const gatewayExhaustedList =
+      triedGatewayModels.size > 0
+        ? Array.from(triedGatewayModels)
+        : this.gatewayUnavailableReason
+          ? ['(ai-gateway-unavailable)']
+          : [];
+
     const capableOllamaModels = await this.ollamaClient.listCapableModels();
 
     if (capableOllamaModels.length > 0) {
-      this.emit('ollama-fallback', capableOllamaModels.map((m) => m.id));
+      this.emit(
+        'ollama-fallback',
+        capableOllamaModels.map((m) => m.id)
+      );
 
       for (const ollamaModel of capableOllamaModels) {
         this.emit('request-start', ollamaModel.id);
@@ -382,21 +462,15 @@ export class RoundRobinRouter extends EventEmitter {
       }
     }
 
-    // None available -> graceful termination
     const error = new AllModelsExhaustedError({
-      zenExhaustedModels: zenExhaustedList,
+      gatewayExhaustedModels: gatewayExhaustedList,
       ollamaChecked: true,
       ollamaModels: capableOllamaModels.map((m) => m.id),
       ollamaHost: this.ollamaClient.getHost(),
+      reason: this.gatewayUnavailableReason,
     });
 
-    this.emit('all-exhausted', {
-      zenExhausted: zenExhaustedList,
-      ollamaChecked: true,
-      ollamaModels: capableOllamaModels.map((m) => m.id),
-      message: error.gracefulNotice,
-    });
-
+    this.emitAllExhausted(gatewayExhaustedList, capableOllamaModels.map((m) => m.id), error.gracefulNotice);
     throw error;
   }
 }
