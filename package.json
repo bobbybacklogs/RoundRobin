@@ -1,6 +1,6 @@
 {
   "name": "@genoventures-labs/roundrobin",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Free-model router for Vercel AI Gateway free models with automatic exhaustion rotation and Ollama fallback.",
   "publishConfig": {
     "access": "public"
@@ -16,7 +16,7 @@
         "default": "./dist/index.js"
       },
       "require": {
-        "types": "./dist/index.d.cts",
+        "types": "./dist/index.d.ts",
         "default": "./dist/index.cjs"
       }
     }
@@ -39,7 +39,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "node dist/cli/index.js",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "pack:check": "npm run build && npm pack --dry-run"
   },
   "repository": {
     "type": "git",

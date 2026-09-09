@@ -20,7 +20,7 @@ program
   .description(
     'Free-model router for Vercel AI Gateway free models with Ollama fallback'
   )
-  .version('1.0.0');
+  .version('2.0.0');
 
 function setupRouterEvents(rr: RoundRobin): void {
   rr.on('model-exhausted', (modelId, reason, cooldownMs) => {
